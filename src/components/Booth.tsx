@@ -20,6 +20,7 @@ export default function Booth() {
   const [cam, setCam] = useState<"starting" | "ready" | "error">("starting");
   const [camError, setCamError] = useState("");
   const [retry, setRetry] = useState(0);
+  const [cameraCount, setCameraCount] = useState(0);
 
   const [category, setCategory] = useState<FrameCategory>("family");
   const [frameId, setFrameId] = useState(frames[0].id);
@@ -58,6 +59,9 @@ export default function Booth() {
         video.srcObject = stream;
         await video.play();
         setCam("ready");
+        // Device labels/count are only reliable after permission is granted.
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        if (!cancelled) setCameraCount(devices.filter((d) => d.kind === "videoinput").length);
       } catch (e) {
         if (cancelled) return;
         const name = e instanceof DOMException ? e.name : "";
@@ -161,15 +165,25 @@ export default function Booth() {
           ← Home
         </Link>
         <span className="font-display text-lg font-bold tracking-widest text-amber-300">{brand.short}</span>
-        <button
-          type="button"
-          onClick={() => restartCamera(facing === "user" ? "environment" : "user")}
-          disabled={!!photo}
-          className="rounded-full bg-white/10 px-3 py-1.5 text-sm disabled:opacity-30"
-          aria-label="Switch camera"
-        >
-          ⟲ Flip
-        </button>
+        {cameraCount > 1 ? (
+          <div role="radiogroup" aria-label="Camera" className={`flex rounded-full bg-white/10 p-0.5 text-xs ${photo ? "opacity-30" : ""}`}>
+            {(["user", "environment"] as const).map((f) => (
+              <button
+                key={f}
+                type="button"
+                role="radio"
+                aria-checked={facing === f}
+                onClick={() => facing !== f && restartCamera(f)}
+                disabled={!!photo}
+                className={`rounded-full px-3 py-1 font-semibold ${facing === f ? "bg-amber-400 text-black" : "text-white/80"}`}
+              >
+                {f === "user" ? "Front" : "Back"}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <span className="w-16" />
+        )}
       </header>
 
       <div className="flex flex-1 items-center justify-center px-3">
