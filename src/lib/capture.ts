@@ -1,5 +1,6 @@
 import { applyFilter, type FilterDef } from "./filters";
 import { H, W, type Frame } from "./frames";
+import type { View } from "./view";
 
 const imageCache = new Map<string, Promise<HTMLImageElement>>();
 
@@ -21,10 +22,10 @@ export function preloadFrames(frames: Frame[]) {
   frames.forEach((f) => loadImage(f.src).catch(() => {}));
 }
 
-// Renders camera (cover-cropped exactly like CSS object-fit: cover) + filter + frame into a JPEG.
+// Renders the visible part of the camera (the same view as the preview) + filter + frame into a JPEG.
 export async function capturePhoto(
   video: HTMLVideoElement,
-  { mirror, frame, filter }: { mirror: boolean; frame: Frame; filter: FilterDef },
+  { mirror, frame, filter, view }: { mirror: boolean; frame: Frame; filter: FilterDef; view: View },
 ): Promise<Blob> {
   const canvas = document.createElement("canvas");
   canvas.width = W;
@@ -32,17 +33,12 @@ export async function capturePhoto(
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   if (!ctx) throw new Error("Canvas not supported");
 
-  const vw = video.videoWidth;
-  const vh = video.videoHeight;
-  const scale = Math.max(W / vw, H / vh);
-  const dw = vw * scale;
-  const dh = vh * scale;
   ctx.save();
   if (mirror) {
     ctx.translate(W, 0);
     ctx.scale(-1, 1);
   }
-  ctx.drawImage(video, (W - dw) / 2, (H - dh) / 2, dw, dh);
+  ctx.drawImage(video, view.x, view.y, view.w, view.h, 0, 0, W, H);
   ctx.restore();
 
   applyFilter(ctx, W, H, filter);

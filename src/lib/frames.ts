@@ -5,7 +5,9 @@ export const W = 1080;
 export const H = 1440;
 
 export type FrameCategory = "family" | "kids";
-export type Frame = { id: string; name: string; category: FrameCategory; src: string };
+// Oval cut-out (frame pixels) where a face belongs; auto-fit zooms the camera onto it.
+export type FaceSpot = { cx: number; cy: number; rx: number; ry: number };
+export type Frame = { id: string; name: string; category: FrameCategory; src: string; face?: FaceSpot };
 
 const SERIF = "Georgia, 'Times New Roman', serif";
 const SANS = "'Helvetica Neue', Arial, sans-serif";
@@ -245,7 +247,7 @@ ${bars}
 /* ----------------------------------- Kids frames ----------------------------------- */
 
 const ARCH = "M170 1120V640A370 370 0 0 1 910 640V1120Z";
-const FACE = { cx: 540, cy: 610, rx: 170, ry: 210 };
+const FACE: FaceSpot = { cx: 540, cy: 610, rx: 170, ry: 210 };
 const insideArch = (x: number, y: number) => x > 150 && x < 930 && y > 250 && y < 1140;
 
 function leaf(x: number, y: number, rot: number, s = 1) {
@@ -421,22 +423,22 @@ ${hand(369, 1118)}${hand(711, 1118)}
 <rect x="390" y="1178" width="300" height="20" fill="#24406d"/>`;
 }
 
-const rawFrames: { id: string; name: string; category: FrameCategory; svg: string }[] = [
+const rawFrames: { id: string; name: string; category: FrameCategory; svg: string; face?: FaceSpot }[] = [
   { id: "festive", name: "Festive Gold", category: "family", svg: festiveFrame() },
   { id: "silk", name: "Silk Saree", category: "family", svg: silkFrame() },
   { id: "wedding", name: "Wedding", category: "family", svg: weddingFrame() },
   { id: "denim", name: "Denim Day", category: "family", svg: denimFrame() },
   { id: "cover", name: "Cover Star", category: "family", svg: magazineFrame() },
   {
-    id: "princess", name: "Little Princess", category: "kids",
+    id: "princess", name: "Little Princess", category: "kids", face: FACE,
     svg: kidsScene({ bg: "#f7c531", plate: "#a3161f", subtitle: "KIDS FESTIVE COLLECTION", decor: "festive", seed: 11, body: princessBody() }),
   },
   {
-    id: "prince", name: "Little Prince", category: "kids",
+    id: "prince", name: "Little Prince", category: "kids", face: FACE,
     svg: kidsScene({ bg: "#19a7a0", plate: MAROON, subtitle: "PATTU VESHTI COLLECTION", decor: "festive", seed: 23, body: princeBody() }),
   },
   {
-    id: "superstar", name: "Superstar", category: "kids",
+    id: "superstar", name: "Superstar", category: "kids", face: FACE,
     svg: kidsScene({ bg: "#6a3de8", plate: "#ff4d6d", subtitle: "KIDS PARTY WEAR", decor: "party", seed: 37, body: superstarBody() }),
   },
 ];

@@ -1,20 +1,29 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import type { FaceDetector } from "@mediapipe/tasks-vision";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { brand } from "@/lib/brand";
 import { capturePhoto, preloadFrames } from "@/lib/capture";
 import { cssFilter, filters } from "@/lib/filters";
-import { frames, type FrameCategory } from "@/lib/frames";
+import { detectFaces, loadFaceDetector, type Box } from "@/lib/faces";
+import { frames, H, W, type FrameCategory } from "@/lib/frames";
+import { coverView, fitFace, lerpView, type FitStatus, type View } from "@/lib/view";
 
 type Facing = "user" | "environment";
 type Photo = { blob: Blob; url: string };
+type Hint = FitStatus | "searching";
+
+const HOLD_MS = 1000;
+const DETECT_EVERY_MS = 100;
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export default function Booth() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const busy = useRef(false);
+  const viewRef = useRef<{ view: View; vw: number; vh: number } | null>(null);
+  const cooldownUntil = useRef(0);
 
   const [facing, setFacing] = useState<Facing>("user");
   const [cam, setCam] = useState<"starting" | "ready" | "error">("starting");
@@ -32,9 +41,15 @@ export default function Booth() {
   const [photo, setPhoto] = useState<Photo | null>(null);
   const [toast, setToast] = useState("");
 
+  const [auto, setAuto] = useState(true);
+  const [detector, setDetector] = useState<FaceDetector | null>(null);
+  const [detectorFailed, setDetectorFailed] = useState(false);
+  const [hint, setHint] = useState<Hint>("searching");
+
   const frame = frames.find((f) => f.id === frameId) ?? frames[0];
   const filter = filters.find((f) => f.id === filterId) ?? filters[0];
   const mirror = facing === "user";
+  const tracking = auto && !!detector && !photo && cam === "ready";
 
   useEffect(() => preloadFrames(frames), []);
 
@@ -84,6 +99,18 @@ export default function Booth() {
   }, [facing, retry]);
 
   useEffect(() => {
+    if (!auto || cam !== "ready" || detector || detectorFailed) return;
+    let cancelled = false;
+    loadFaceDetector().then(
+      (d) => !cancelled && setDetector(d),
+      () => !cancelled && setDetectorFailed(true),
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [auto, cam, detector, detectorFailed]);
+
+  useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(""), 2500);
     return () => clearTimeout(t);
@@ -114,7 +141,8 @@ export default function Booth() {
         setCount(0);
       }
       setFlash(true);
-      const blob = await capturePhoto(video, { mirror, frame, filter });
+      const view = viewRef.current?.view ?? coverView(video.videoWidth, video.videoHeight);
+      const blob = await capturePhoto(video, { mirror, frame, filter, view });
       setPhoto({ blob, url: URL.createObjectURL(blob) });
     } catch (e) {
       setToast(e instanceof Error ? e.message : "Capture failed");
@@ -127,7 +155,87 @@ export default function Booth() {
   function discard() {
     if (photo) URL.revokeObjectURL(photo.url);
     setPhoto(null);
+    // Give people a moment before auto-capture fires again.
+    cooldownUntil.current = performance.now() + 2500;
   }
+
+  const onSteady = useEffectEvent(() => {
+    if (!busy.current && performance.now() > cooldownUntil.current) void shoot();
+  });
+
+  // Per animation frame: eases the visible camera crop toward its target. Every DETECT_EVERY_MS while
+  // tracking: finds faces, aims the crop at kids-frame cut-outs, and auto-captures once faces hold still.
+  useEffect(() => {
+    const video = videoRef.current;
+    if (cam !== "ready" || !video) return;
+    let raf = 0;
+    let lastDetect = 0;
+    let lastSeen = 0;
+    let steadySince = 0;
+    let prev: Box[] = [];
+    let target: View | null = null;
+
+    const loop = (now: number) => {
+      raf = requestAnimationFrame(loop);
+      const vw = video.videoWidth;
+      const vh = video.videoHeight;
+      if (!vw || !vh) return;
+      const cover = coverView(vw, vh);
+
+      if (tracking && detector && now - lastDetect >= DETECT_EVERY_MS) {
+        lastDetect = now;
+        let faces: Box[] = [];
+        try {
+          faces = detectFaces(detector, video, now);
+        } catch {
+          return;
+        }
+        const center = (f: Box) => [f.x + f.w / 2, f.y + f.h / 2];
+        const moved =
+          faces.length !== prev.length ||
+          faces.some((f, i) => {
+            const [ax, ay] = center(f);
+            const [bx, by] = center(prev[i]);
+            return Math.hypot(ax - bx, ay - by) > 0.04 * vw;
+          });
+        prev = faces;
+
+        let status: Hint = "searching";
+        if (faces.length) {
+          lastSeen = now;
+          status = "ok";
+          if (frame.face) {
+            const main = faces.reduce((a, b) => (b.w * b.h > a.w * a.h ? b : a));
+            const fit = fitFace(main, frame.face, vw, vh, mirror);
+            target = fit.view;
+            status = fit.status;
+          }
+        } else if (now - lastSeen > 1000) {
+          target = null;
+        }
+
+        if (status !== "ok" || moved) steadySince = now;
+        if (status === "ok" && now - steadySince >= HOLD_MS) {
+          steadySince = now;
+          onSteady();
+        }
+        setHint(status);
+      }
+
+      const cur = viewRef.current;
+      const from = cur && cur.vw === vw && cur.vh === vh ? cur.view : cover;
+      const view = lerpView(from, tracking && target ? target : cover, 0.15);
+      viewRef.current = { view, vw, vh };
+      // The video is object-fit: cover (= `cover` view); a transform zooms/pans from there without
+      // enlarging the video layer.
+      const z = cover.w / view.w;
+      const tx = (-z * (view.x - cover.x) * 100) / cover.w;
+      const ty = (-z * (view.y - cover.y) * 100) / cover.h;
+      video.style.transform = `translate(${tx}%, ${ty}%) scale(${z})`;
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [cam, tracking, detector, frame, mirror]);
 
   const fileName = () => `${brand.short.toLowerCase()}-booth-${Date.now()}.jpg`;
 
@@ -157,6 +265,19 @@ export default function Booth() {
   }
 
   const visibleFrames = frames.filter((f) => f.category === category);
+  const spot = frame.face;
+  const hintText = !detector
+    ? "Loading face detection…"
+    : {
+        searching: spot ? "Bring your face into the circle" : "Looking for faces…",
+        closer: "Come a little closer",
+        back: "Step back a little",
+        up: "Move up a little",
+        down: "Move down a little",
+        left: "Move left a little",
+        right: "Move right a little",
+        ok: "Hold still… 📸",
+      }[hint];
 
   return (
     <main className="flex min-h-dvh flex-col bg-[#2a0a10] text-white">
@@ -191,15 +312,36 @@ export default function Booth() {
           className="relative aspect-3/4 overflow-hidden rounded-2xl bg-black shadow-2xl shadow-black/60 ring-2 ring-amber-400/40"
           style={{ width: "min(100%, calc((100dvh - 300px) * 0.75))" }}
         >
-          <video
-            ref={videoRef}
-            playsInline
-            muted
-            autoPlay
-            className="absolute inset-0 h-full w-full object-cover"
-            style={{ transform: mirror ? "scaleX(-1)" : undefined, filter: cssFilter(filter) }}
-          />
+          {/* The crop loop transforms the video; the wrapper mirrors the whole cropped view. */}
+          <div className="absolute inset-0" style={{ transform: mirror ? "scaleX(-1)" : undefined }}>
+            <video
+              ref={videoRef}
+              playsInline
+              muted
+              autoPlay
+              className="absolute inset-0 h-full w-full origin-top-left object-cover"
+              style={{ filter: cssFilter(filter) }}
+            />
+          </div>
           <img src={frame.src} alt="" className="pointer-events-none absolute inset-0 h-full w-full" />
+          {tracking && spot && (
+            <div
+              className={`pointer-events-none absolute rounded-[50%] border-4 transition-all duration-300 ${hint === "ok" ? "border-green-400 shadow-[0_0_24px_rgba(74,222,128,0.8)]" : "border-transparent"}`}
+              style={{
+                left: `${((spot.cx - spot.rx) / W) * 100}%`,
+                top: `${((spot.cy - spot.ry) / H) * 100}%`,
+                width: `${((2 * spot.rx) / W) * 100}%`,
+                height: `${((2 * spot.ry) / H) * 100}%`,
+              }}
+            />
+          )}
+          {auto && !detectorFailed && !photo && cam === "ready" && count === 0 && (
+            <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center">
+              <span className={`rounded-full px-3 py-1 text-xs font-semibold ${hint === "ok" && detector ? "bg-green-500 text-black" : "bg-black/70"}`}>
+                {hintText}
+              </span>
+            </div>
+          )}
 
           {cam === "starting" && (
             <div className="absolute inset-0 flex items-center justify-center bg-black/60 text-sm">Starting camera…</div>
@@ -298,7 +440,19 @@ export default function Booth() {
               >
                 <span className="h-15 w-15 rounded-full bg-amber-400 transition active:scale-90" />
               </button>
-              <span className="w-16" />
+              {detectorFailed ? (
+                <span className="w-16" />
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setAuto((a) => !a)}
+                  aria-pressed={auto}
+                  aria-label="Automatic face framing and capture"
+                  className={`w-16 rounded-full py-1.5 text-xs ${auto ? "bg-amber-400 font-semibold text-black" : "bg-white/10"}`}
+                >
+                  🙂 {auto ? "Auto" : "Off"}
+                </button>
+              )}
             </div>
           </div>
         )}
