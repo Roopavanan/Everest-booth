@@ -1,69 +1,54 @@
-import Image from "next/image";
+import Link from "next/link";
+import { brand } from "@/lib/brand";
+import { logoSrc, frames } from "@/lib/frames";
+
+const steps = [
+  { icon: "📷", title: "Snap", text: "Pick a festive frame & filter" },
+  { icon: "👧", title: "Kids", text: "Cute traditional outfit frames" },
+  { icon: "💌", title: "Share", text: "Save or send on WhatsApp" },
+];
 
 export default function Home() {
+  const preview = [frames.find((f) => f.id === "princess")!, frames.find((f) => f.id === "festive")!];
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+    <main className="flex min-h-dvh flex-col items-center bg-[radial-gradient(ellipse_at_top,#9b1b2c,#2a0a10_70%)] px-6 pt-10 pb-8 text-center text-white">
+      <img src={logoSrc} alt={`${brand.name} logo`} className="h-24 w-auto" />
+      <h1 className="font-display mt-4 text-4xl font-bold tracking-[0.2em] text-amber-300">{brand.short}</h1>
+      <p className="tracking-[0.5em] text-amber-100/80">{brand.sub}</p>
+      <p className="font-display mt-6 text-2xl italic">Selfie Booth</p>
+      <p className="mt-1 text-sm text-white/70">{brand.tagline} — take a photo in our festive frames!</p>
+
+      <div className="mt-8 flex items-end justify-center gap-4">
+        {preview.map((f, i) => (
+          <div
+            key={f.id}
+            className={`aspect-3/4 w-32 overflow-hidden rounded-xl bg-linear-to-b from-stone-300 to-stone-500 shadow-xl ring-2 ring-amber-400/60 ${i ? "rotate-3" : "-rotate-3"}`}
           >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+            <img src={f.src} alt={f.name} className="h-full w-full" />
+          </div>
+        ))}
+      </div>
+
+      <Link
+        href="/booth"
+        className="mt-10 w-full max-w-xs rounded-full bg-amber-400 py-4 text-lg font-bold text-black shadow-lg shadow-amber-500/30 active:scale-95"
+      >
+        Start Photo Booth
+      </Link>
+
+      <ul className="mt-10 grid w-full max-w-md grid-cols-3 gap-3 text-xs">
+        {steps.map((s) => (
+          <li key={s.title} className="rounded-xl bg-white/5 p-3">
+            <div className="text-2xl">{s.icon}</div>
+            <div className="mt-1 font-semibold text-amber-200">{s.title}</div>
+            <div className="mt-0.5 text-white/60">{s.text}</div>
+          </li>
+        ))}
+      </ul>
+
+      <Link href="/qr" className="mt-auto pt-10 text-xs text-white/40 underline">
+        Print QR standee
+      </Link>
+    </main>
   );
 }
